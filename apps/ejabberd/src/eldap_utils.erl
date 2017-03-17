@@ -75,7 +75,7 @@ find_ldap_attrs([{Attr} | Rest], Attributes) ->
     find_ldap_attrs([{Attr, <<"%u">>} | Rest], Attributes);
 find_ldap_attrs([{Attr, Format} | Rest], Attributes) ->
     case get_ldap_attr(Attr, Attributes) of
-        Value when is_binary(Value), Value /= <<>> ->
+        Value when Value /= <<>> ->
             {Value, Format};
         _ ->
             find_ldap_attrs(Rest, Attributes)
@@ -98,12 +98,13 @@ get_ldap_attr(LDAPAttr, Attributes) ->
 
 -spec get_user_part(binary(), binary()) -> {ok, binary()} | {error, badmatch}.
 get_user_part(String, Pattern) ->
+  BinString = list_to_binary(String),
     F = fun(S, P) ->
         {First, _} = binary:match(P, <<"%u">>),
                 TailLength = byte_size(P) - (First+1),
         binary:part(S, First, byte_size(S)-TailLength-First+1)
         end,
-    case catch F(String, Pattern) of
+    case catch F(BinString, Pattern) of
             {'EXIT', _} ->
                 {error, badmatch};
         Result ->
@@ -176,12 +177,17 @@ make_filter(Data, UIDs, Op) ->
 
 -spec case_insensitive_match(binary(), binary()) -> boolean().
 case_insensitive_match(X, Y) ->
-    X1 = string:to_lower(binary_to_list(X)),
-    Y1 = string:to_lower(binary_to_list(Y)),
+    X1 = string:to_lower(maybe_binary_to_list(X)),
+    Y1 = string:to_lower(maybe_binary_to_list(Y)),
     if
         X1 == Y1 -> true;
         true -> false
     end.
+
+maybe_binary_to_list(El) when is_binary(El) ->
+  binary_to_list(El);
+maybe_binary_to_list(El) ->
+  El.
 
 
 -spec get_state(binary() | string(), atom()) -> any().

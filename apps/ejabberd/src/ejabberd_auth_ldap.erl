@@ -321,7 +321,7 @@ get_vh_registered_users_ldap(LServer) ->
                                   {deref, State#state.deref},
                                   {attributes, ResAttrs}])
               of
-            #eldap_search_result{entries = Entries} ->
+            {ok, #eldap_search_result{entries = Entries}} ->
                 lists:flatmap(fun (#eldap_entry{attributes = Attrs,
                                                 object_name = DN}) ->
                                       case is_valid_dn(DN, Attrs, State) of
@@ -437,7 +437,7 @@ is_valid_dn(DN, Attrs, State) ->
                                   {deref, State#state.deref},
                                   {attributes, [<<"dn">>]}])
               of
-            #eldap_search_result{entries = [_ | _]} -> DN;
+            {ok, #eldap_search_result{entries = [_ | _]}} -> DN;
             _ -> false
           end;
       _ -> false
