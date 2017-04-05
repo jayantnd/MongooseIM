@@ -47,9 +47,11 @@
          get_user_roster/2,
          get_subscription_lists/3,
          get_roster/2,
+         item_to_map/1,
          in_subscription/6,
          out_subscription/5,
          set_items/3,
+         set_roster_entry/4,
          remove_user/2,
          remove_user/3,
          get_jid_info/4,
@@ -380,6 +382,11 @@ item_to_xml(Item) ->
 get_roster_by_jid_t(LUser, LServer, LJID) ->
     mod_roster_backend:get_roster_by_jid_t(LUser, LServer, LJID).
 
+get_roster_by_jid(LUser, LServer, LJID) ->
+    {atomic, Item} = transaction(LServer,
+        fun() -> get_roster_by_jid_t(LUser, LServer, LJID) end),
+    Item.
+
 process_iq_set(#jid{lserver = LServer} = From, To, #iq{sub_el = SubEl} = IQ) ->
     #xmlel{children = Els} = SubEl,
     ejabberd_hooks:run(roster_set, LServer, [From, To, SubEl]),
@@ -397,10 +404,15 @@ do_process_item_set(JID1,
                     To,
                     #xmlel{attrs = Attrs, children = Els}) ->
     LJID = jid:to_lower(JID1),
+    Item = get_roster_by_jid(LUser, LServer, LJID),
+    Item1 = process_item_attrs(Item, Attrs),
+    Item2 = process_item_els(Item1, Els),
+    set_roster_item(User, LUser, LServer, LJID, From, To, Item, Item2).
+
+%% @doc this is run when a roster item is to be added, updated or removed
+%% the interface of this func could probably be a bit simpler
+set_roster_item(User, LUser, LServer, LJID, From, To, Item, Item2) ->
     F = fun () ->
-                Item = get_roster_by_jid_t(LUser, LServer, LJID),
-                Item1 = process_item_attrs(Item, Attrs),
-                Item2 = process_item_els(Item1, Els),
                 case Item2#roster.subscription of
                     remove -> del_roster_t(LUser, LServer, LJID);
                     _ -> update_roster_t(LUser, LServer, LJID, Item2)
@@ -415,15 +427,15 @@ do_process_item_set(JID1,
                 {Item, Item3}
         end,
     case transaction(LServer, F) of
-        {atomic, {OldItem, Item}} ->
+        {atomic, {OldItem, NewItem}} ->
             push_item(User, LServer, To, Item),
-            case Item#roster.subscription of
+            case NewItem#roster.subscription of
                 remove ->
                     send_unsubscribing_presence(From, OldItem), ok;
                 _ -> ok
             end;
         E ->
-            ?DEBUG("ROSTER: roster item set error: ~p~n", [E]), ok
+            ?ERROR_MSG("ROSTER: roster item set error: ~p~n", [E]), ok
     end.
 
 process_item_attrs(Item, [{<<"jid">>, Val} | Attrs]) ->
@@ -808,6 +820,30 @@ set_items(User, Server, SubEl) ->
         end,
     transaction(LServer, F).
 
+%% @doc add a contact to roster, or update
+-spec set_roster_entry(jid(), binary(), binary(), [binary()]) -> ok|error.
+set_roster_entry(UserJid, ContactBin, Name, Groups) ->
+    LUser = UserJid#jid.luser,
+    LServer = UserJid#jid.lserver,
+    JID1 = jid:from_binary(ContactBin),
+    case JID1 of
+        error -> error;
+        _ ->
+            LJID = jid:to_lower(JID1),
+            Item = get_roster_by_jid(LUser, LServer, LJID),
+            Item2 = Item#roster{name = Name, groups = Groups},
+            set_roster_item(
+                LUser, % User
+                LUser, % LUser
+                LServer, % LServer
+                LJID, % LJID
+                UserJid, % From
+                UserJid, % To
+                Item, % Item
+                Item2 % Item2
+            )
+    end.
+
 update_roster_t(LUser, LServer, LJID, Item) ->
     mod_roster_backend:update_roster_t(LUser, LServer, LJID, Item).
 
@@ -884,4 +920,14 @@ get_bare_jid_info(User, Server, LJID) ->
         {Subscription, Groups} -> {Subscription, Groups};
         error -> {none, []}
     end.
+
+-spec item_to_map(roster()) -> map().
+item_to_map(#roster{} = Roster) ->
+    {Name, Host, _} = Roster#roster.jid,
+    ContactJid = jid:make(Name, Host, <<"">>),
+    ContactName = Roster#roster.name,
+    Subs = Roster#roster.subscription,
+    Groups = Roster#roster.groups,
+    #{jid => ContactJid, name => ContactName, subscription => Subs,
+      groups => Groups}.
 
