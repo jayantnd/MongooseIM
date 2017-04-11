@@ -321,14 +321,15 @@ get_user_to_groups_map({_, Server} = US, SkipUS) ->
 eldap_search(State, FilterParseArgs, AttributesList) ->
     case apply(eldap_filter, parse, FilterParseArgs) of
         {ok, EldapFilter} ->
+          AttrsFiltered = result_attrs(AttributesList),
             case eldap_pool:search(State#state.eldap_id,
                                    [{base, State#state.base},
                                     {filter, EldapFilter},
                                     {timeout, ?LDAP_SEARCH_TIMEOUT},
                                     {deref, State#state.deref},
-                                    {attributes, AttributesList}])
+                                    {attributes, AttrsFiltered}])
             of
-                #eldap_search_result{entries = Es} ->
+              {ok, #eldap_search_result{entries = Es}} ->
                     %% A result with entries. Return their list.
                     Es;
                 _ ->
@@ -339,6 +340,9 @@ eldap_search(State, FilterParseArgs, AttributesList) ->
             %% Filter parsing failed. Pretend we got no results.
             []
     end.
+
+result_attrs(AttrList) ->
+  lists:foldl(fun (UID, Acc) -> [binary_to_list(UID) | Acc] end, [], AttrList).
 
 get_user_displayed_groups({User, Host}) ->
     {ok, State} = eldap_utils:get_state(Host, ?MODULE),
