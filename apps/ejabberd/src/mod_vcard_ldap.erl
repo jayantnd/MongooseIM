@@ -243,7 +243,7 @@ find_ldap_user(User, State) ->
                                   {deref, State#state.deref},
                                   {attributes, VCardAttrs}])
               of
-            #eldap_search_result{entries = [E | _]} -> E;
+            {ok, #eldap_search_result{entries = [E | _]}} -> E;
             _ -> false
           end;
       _ -> false
@@ -376,7 +376,7 @@ search_internal(State, Data) ->
                             {deref, State#state.deref},
                             {attributes, ReportedAttrs}])
         of
-      #eldap_search_result{entries = E} ->
+      {ok, #eldap_search_result{entries = E}} ->
           search_items(E, State);
       _ -> error
     end.
