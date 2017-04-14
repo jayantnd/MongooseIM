@@ -70,6 +70,8 @@
 
 -type roster() :: #roster{}.
 
+-type subscription_state() :: none  | from | to | both | remove.
+
 -callback init(Host, Opts) -> ok when
     Host :: ejabberd:server(),
     Opts :: list().
@@ -132,7 +134,7 @@
     LUser :: ejabberd:luser(),
     LServer :: ejabberd:lserver(),
     LJid :: ejabberd:simple_jid(),
-    Result :: term().
+    Result :: { subscription_state(), [binary()]} | error.
 
 -callback raw_to_record(LServer, Item) -> Result when
     LServer :: ejabberd:lserver(),
@@ -342,6 +344,9 @@ create_sub_el(Items, Version) ->
                      {<<"ver">>, Version}],
             children = Items}].
 
+-spec get_user_roster(Acc :: [roster()],
+                     {LUser :: binary(), LServer :: binary()}) ->
+    [{roster()}].
 get_user_roster(Acc, {LUser, LServer}) ->
     lists:filter(fun (#roster{subscription = none, ask = in}) ->
                          false;
@@ -412,6 +417,14 @@ do_process_item_set(JID1,
 
 %% @doc this is run when a roster item is to be added, updated or removed
 %% the interface of this func could probably be a bit simpler
+-spec set_roster_item(User :: binary(),
+                      LUser :: binary(),
+                      LServer :: binary(),
+                      LJID :: ejabberd:simple_jid() | error,
+                      From :: jid(),
+                      To :: jid(),
+                      Item :: roster(),
+                      Item2 :: roster()) -> ok.
 set_roster_item(User, LUser, LServer, LJID, From, To, Item, Item2) ->
     F = fun () ->
                 case Item2#roster.subscription of
@@ -521,6 +534,9 @@ push_item_version(Server, User, From, Item,
                   end,
                   ejabberd_sm:get_user_resources(User, Server)).
 
+-spec get_subscription_lists(Acc :: mongoose_acc:t(),
+                             User :: binary(),
+                             Server :: binary()) -> mongoose_acc:t().
 get_subscription_lists(Acc, User, Server) ->
     LUser = jid:nodeprep(User),
     LServer = jid:nameprep(Server),
@@ -766,7 +782,6 @@ in_auto_reply(from, out, unsubscribe) -> unsubscribed;
 in_auto_reply(both, none, unsubscribe) -> unsubscribed;
 in_auto_reply(_, _, _) -> none.
 
-%% #rh
 remove_user(Acc, User, Server) ->
     remove_user(User, Server),
     Acc.
@@ -847,7 +862,8 @@ set_roster_entry(UserJid, ContactBin, Name, Groups) ->
     end.
 
 %% @doc remove from roster
--spec remove_from_roster(jid(), binary()) -> ok|error.
+-spec remove_from_roster(UserJid :: jid(),
+                         ContactBin :: binary()) -> ok|error.
 remove_from_roster(UserJid, ContactBin) ->
     LUser = UserJid#jid.luser,
     LServer = UserJid#jid.lserver,
@@ -929,6 +945,11 @@ read_subscription_and_groups(User, Server, LJID) ->
     LServer = jid:nameprep(Server),
     mod_roster_backend:read_subscription_and_groups(LUser, LServer, LJID).
 
+-spec get_jid_info(any(),
+                   User :: binary(),
+                   Server :: binary(),
+                   JID :: jid() | ejabberd:simple_jid()) ->
+    { subscription_state(), [binary()]}.
 get_jid_info(_, User, Server, JID) ->
     LJID = jid:to_lower(JID),
     case read_subscription_and_groups(User, Server, LJID) of
@@ -938,6 +959,10 @@ get_jid_info(_, User, Server, JID) ->
             get_bare_jid_info(User, Server, LJID)
     end.
 
+-spec get_bare_jid_info(User :: binary(),
+                        Server :: binary(),
+                        JID :: jid() | ejabberd:simple_jid()) ->
+    { subscription_state(), [binary()]}.
 get_bare_jid_info(_User, _Server, {_, _, <<>>}) ->
     {none, []};
 get_bare_jid_info(User, Server, LJID) ->
