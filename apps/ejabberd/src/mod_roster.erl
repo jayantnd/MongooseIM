@@ -67,7 +67,7 @@
 -include("jlib.hrl").
 -include("mod_roster.hrl").
 
--export_type([roster/0]).
+-export_type([roster/0, sub_presence/0]).
 
 -type roster() :: #roster{}.
 
